@@ -18,7 +18,7 @@ import retrofit2.converter.gson.GsonConverterFactory;
 @Module (includes = {GsonModule.class, OkHttpClientModule.class})
 public class RetrofitModule {
 
-    public static final String BASE_API_URL = "http://192.168.0.4:8080";
+    public static final String BASE_API_URL = "http://10.0.2.2:8080";
     public final static int CONNECTION_TIMEOUT = 30;
     private final static int READ_TIMEOUT = 30;
     private final static int WRITE_TIMEOUT = 30;
