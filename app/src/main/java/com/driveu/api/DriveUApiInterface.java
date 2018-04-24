@@ -1,6 +1,6 @@
 package com.driveu.api;
 
-import com.driveu.model.Location;
+import com.driveu.object.Location;
 
 import retrofit2.Call;
 import retrofit2.http.GET;

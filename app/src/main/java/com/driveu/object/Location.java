@@ -1,4 +1,4 @@
-package com.driveu.model;
+package com.driveu.object;
 
 /**
  * Created by Aishwarya on 4/19/2018.

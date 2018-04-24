@@ -1,6 +1,6 @@
 package com.driveu.event;
 
-import com.driveu.model.Location;
+import com.driveu.object.Location;
 
 /**
  * Created by Aishwarya on 4/19/2018.

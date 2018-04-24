@@ -9,15 +9,21 @@ import android.support.design.widget.FloatingActionButton;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
-import android.util.Log;
-import android.widget.Toast;
 
+import com.driveu.DriveUApplication;
+import com.driveu.dependency.component.DaggerMapsActivityComponent;
+import com.driveu.dependency.component.MapsActivityComponent;
 import com.driveu.config.Constants;
+import com.driveu.dependency.module.PresenterImplModule;
 import com.driveu.manager.PreferencesManager;
-import com.driveu.model.Location;
+import com.driveu.object.Location;
+import com.driveu.dependency.module.ContextModule;
+import com.driveu.model.PresenterImpl;
+import com.driveu.presenter.Presenter;
 import com.driveu.service.DriveUBackgroundService;
 import com.driveu.R;
 import com.driveu.event.LocationUpdateEvent;
+import com.driveu.view.DriveUView;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
@@ -31,21 +37,38 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
 
+import java.net.ProxySelector;
+
+import javax.inject.Inject;
+
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
 
 public class MapsActivity extends FragmentActivity implements
-        OnMapReadyCallback{
+        OnMapReadyCallback,
+        DriveUView{
 
     @BindView(R.id.poll_location_tab)
     FloatingActionButton mFabButton;
 
+    @Inject
+    LocationManager locationManager;
+
+    @Inject
+    MarkerOptions markerOptions;
+
+    @Inject
+    Gson gson;
+
     private Intent intent;
+    private Presenter presenter;
     private GoogleMap mMap;
     private int pollingState = 0;
-    private LocationManager locationManager;
+    private EventBus eventBus;
+    private PreferencesManager preferencesManager;
     private android.location.Location myLocation;
+    private MapsActivityComponent component;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,6 +79,16 @@ public class MapsActivity extends FragmentActivity implements
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
+
+        component = DaggerMapsActivityComponent.builder()
+                .presenterImplModule(new PresenterImplModule(this))
+                .contextModule(new ContextModule(getApplicationContext()))
+                .build();
+
+        component.injectMapsActivity(this);
+        presenter = component.getPresenterImpl();
+        eventBus = DriveUApplication.getForActivity(this).getEventBus();
+        preferencesManager = DriveUApplication.getForActivity(this).getPreferencesManager();
         intent = new Intent(MapsActivity.this,DriveUBackgroundService.class);
     }
 
@@ -77,17 +110,65 @@ public class MapsActivity extends FragmentActivity implements
 
     @OnClick(R.id.poll_location_tab)
     public void togglePolling() {
-        if (pollingState == PollingState.STATE_STOPPED) {
-            pollingState = PollingState.STATE_STARTED;
-            mFabButton.setImageResource(R.drawable.ic_stop);
-            startService(intent);
+        presenter.togglePolling(pollingState);
+    }
 
-        } else if (pollingState == PollingState.STATE_STARTED) {
-            pollingState = PollingState.STATE_STOPPED;
-            mFabButton.setImageResource(R.drawable.ic_start);
-            stopService(intent);
+    @Override
+    public void onStartLocationSuccess() {
+        LatLng currentLocation = new LatLng(-33.852, 151.211);
+        mMap.addMarker(markerOptions.position(currentLocation).title("Default Location"));
+        mMap.moveCamera(CameraUpdateFactory.newLatLng(currentLocation));
+    }
+
+    @Override
+    public void onStartLocationFail() {
+        LatLng currentLocation = new LatLng(myLocation.getLatitude(),myLocation.getLongitude());
+        mMap.addMarker(markerOptions.position(currentLocation).title("Your Current Location"));
+        mMap.moveCamera(CameraUpdateFactory.newLatLng(currentLocation));
+    }
+
+    @Override
+    public void onStartPolling() {
+        pollingState = PollingState.STATE_STARTED;
+        mFabButton.setImageResource(R.drawable.ic_stop);
+        startService(intent);
+    }
+
+    @Override
+    public void onStopPolling() {
+        pollingState = PollingState.STATE_STOPPED;
+        mFabButton.setImageResource(R.drawable.ic_start);
+        stopService(intent);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        eventBus.unregister(this);
+        preferencesManager.putState(getApplicationContext(),Constants.APP_STATE,0);
+        if(pollingState == PollingState.STATE_STOPPED) {
+            preferencesManager.clearData(this);
         }
     }
+
+    @Override
+    protected void onDestroy() {
+        preferencesManager.clearData(getApplicationContext());
+        super.onDestroy();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if(!preferencesManager.getValue(getApplicationContext(), Constants.LOCATION).equals("DEFAULT")) {
+            String fields = preferencesManager.getValue(getApplicationContext(),Constants.LOCATION);
+            onUpdateFields(new LocationUpdateEvent(gson.fromJson(fields,Location.class)));
+            preferencesManager.removeData(getApplicationContext(),Constants.LOCATION);
+        }
+        eventBus.register(this);
+        preferencesManager.putState(getApplicationContext(),Constants.APP_STATE,1);
+    }
+
 
     /************************************
      * PRIVATE METHODS
@@ -105,53 +186,16 @@ public class MapsActivity extends FragmentActivity implements
             // for ActivityCompat#requestPermissions for more details.
             return;
         }
-        myLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-        if (myLocation==null) {
-            //If Location not provided, default location is set to Sydney.
-
-            LatLng currentLocation = new LatLng(-33.852, 151.211);
-            mMap.addMarker(new MarkerOptions().position(currentLocation).title("Default Location"));
-            mMap.moveCamera(CameraUpdateFactory.newLatLng(currentLocation));
-        }
-        else {
-            LatLng currentLocation = new LatLng(myLocation.getLatitude(),myLocation.getLongitude());
-            mMap.addMarker(new MarkerOptions().position(currentLocation).title("Your Current Location"));
-            mMap.moveCamera(CameraUpdateFactory.newLatLng(currentLocation));
-        }
+        myLocation = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+        presenter.getStartLocation(myLocation);
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onUpdateFields(LocationUpdateEvent locationUpdateEvent) {
         LatLng latLng = new LatLng(locationUpdateEvent.getUpdatedLocation().getLatitude(), locationUpdateEvent.getUpdatedLocation().getLongitude());
-        mMap.addMarker(new MarkerOptions().position(latLng).title("Next Position"));
+        mMap.addMarker(markerOptions.position(latLng).title("Next Position"));
         CameraPosition cameraPosition = CameraPosition.builder().zoom(10.0f).target(latLng).build();
         mMap.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        EventBus.getDefault().unregister(this);
-        PreferencesManager.getInstance().putState(getApplicationContext(),Constants.APP_STATE,0);
-
-    }
-
-    @Override
-    protected void onDestroy() {
-        PreferencesManager.getInstance().clearData(getApplicationContext());
-        super.onDestroy();
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if(!PreferencesManager.getInstance().getValue(getApplicationContext(), Constants.LOCATION).equals("DEFAULT")) {
-            String fields = PreferencesManager.getInstance().getValue(getApplicationContext(),Constants.LOCATION);
-            onUpdateFields(new LocationUpdateEvent(new Gson().fromJson(fields,Location.class)));
-            PreferencesManager.getInstance().removeData(getApplicationContext(),Constants.LOCATION);
-        }
-        EventBus.getDefault().register(this);
-        PreferencesManager.getInstance().putState(getApplicationContext(),Constants.APP_STATE,1);
     }
 
     /************************************

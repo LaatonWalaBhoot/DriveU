@@ -3,33 +3,22 @@ package com.driveu.api;
 import android.support.annotation.NonNull;
 import android.util.Log;
 
-import com.driveu.model.Location;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-
+import com.driveu.dependency.component.DaggerDriveUApiComponent;
+import com.driveu.dependency.component.DriveUApiComponent;
+import com.driveu.object.Location;
 import java.io.IOException;
-import java.util.concurrent.TimeUnit;
 
-import okhttp3.Interceptor;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
-import okhttp3.logging.HttpLoggingInterceptor;
+import javax.inject.Inject;
+
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Retrofit;
-import retrofit2.converter.gson.GsonConverterFactory;
 
 /**
  * Created by Aishwarya on 4/19/2018.
  */
 
-public class DriveUApi  {
-
-    public static final String BASE_API_URL = "http://10.0.2.2:8080";
-    public final static int CONNECTION_TIMEOUT = 30;
-    private final static int READ_TIMEOUT = 30;
-    private final static int WRITE_TIMEOUT = 30;
+public class DriveUApi {
 
     /************************************
      * PRIVATE STATIC FIELDS
@@ -39,20 +28,25 @@ public class DriveUApi  {
     /************************************
      * PRIVATE FIELDS
      ************************************/
+    @Inject
+    Retrofit retrofit;
+
     private DriveUApiInterface service;
+    private DriveUApiComponent component;
 
     /************************************
      * PRIVATE METHODS
      ************************************/
-    private DriveUApi() {}
+    private DriveUApi() {
+    }
 
     /************************************
      * PUBLIC STATIC METHODS
      ************************************/
     public static DriveUApi getInstance() {
-        if(instance==null) {
+        if (instance == null) {
             synchronized (DriveUApi.class) {
-                if(instance==null) {
+                if (instance == null) {
                     instance = new DriveUApi();
                     instance.init();
                 }
@@ -65,12 +59,12 @@ public class DriveUApi  {
         service.getNextLocation().enqueue(new Callback<Location>() {
             @Override
             public void onResponse(Call<Location> call, retrofit2.Response<Location> response) {
-                if(response.errorBody()!=null) {
+                if (response.errorBody() != null) {
                     try {
                         nextLocationListener.onNextLocationFailure(new NextLocationException(response.errorBody().string()));
                     } catch (IOException e) {
                         nextLocationListener.onNextLocationFailure(new NextLocationException("IOException when parsing error status"));
-                        Log.d("MESSAGE: ","onResponse - IOException - " + Log.getStackTraceString(e));
+                        Log.d("MESSAGE: ", "onResponse - IOException - " + Log.getStackTraceString(e));
                         e.printStackTrace();
                     }
                     return;
@@ -110,40 +104,8 @@ public class DriveUApi  {
      ************************************/
     private void init() {
 
-        Gson gson = new GsonBuilder().create();
-        OkHttpClient httpClient = createHttpClient();
-
-        Retrofit retrofit = new Retrofit.Builder()
-                .client(httpClient)
-                .baseUrl(BASE_API_URL)
-                .addConverterFactory(GsonConverterFactory.create(gson))
-                .build();
-
-        OkHttpClient.Builder httpClientBuilder = new OkHttpClient.Builder();
-        httpClientBuilder
-                .connectTimeout(CONNECTION_TIMEOUT, TimeUnit.SECONDS)
-                .writeTimeout(WRITE_TIMEOUT, TimeUnit.SECONDS)
-                .readTimeout(READ_TIMEOUT, TimeUnit.SECONDS);
-
+        component = DaggerDriveUApiComponent.builder().build();
+        component.injectDriveUApi(this);
         service = retrofit.create(DriveUApiInterface.class);
-    }
-
-    private OkHttpClient createHttpClient() {
-
-        HttpLoggingInterceptor logging = new HttpLoggingInterceptor();
-        logging.setLevel(HttpLoggingInterceptor.Level.BODY);
-
-        OkHttpClient.Builder builder = new OkHttpClient.Builder()
-                .addInterceptor(new Interceptor() {
-                    @Override
-                    public Response intercept(Chain chain) throws IOException {
-                        Request originalRequest = chain.request();
-                        Request.Builder requestBuilder = originalRequest.newBuilder();
-                        return chain.proceed(requestBuilder.build());
-                    }
-                })
-                .addInterceptor(logging);
-
-        return builder.build();
     }
 }
