@@ -115,15 +115,15 @@ public class MapsActivity extends FragmentActivity implements
 
     @Override
     public void onStartLocationSuccess() {
-        LatLng currentLocation = new LatLng(-33.852, 151.211);
-        mMap.addMarker(markerOptions.position(currentLocation).title("Default Location"));
+        LatLng currentLocation = new LatLng(myLocation.getLatitude(),myLocation.getLongitude());
+        mMap.addMarker(markerOptions.position(currentLocation).title("Your Current Location"));
         mMap.moveCamera(CameraUpdateFactory.newLatLng(currentLocation));
     }
 
     @Override
     public void onStartLocationFail() {
-        LatLng currentLocation = new LatLng(myLocation.getLatitude(),myLocation.getLongitude());
-        mMap.addMarker(markerOptions.position(currentLocation).title("Your Current Location"));
+        LatLng currentLocation = new LatLng(-33.852, 151.211);
+        mMap.addMarker(markerOptions.position(currentLocation).title("Default Location"));
         mMap.moveCamera(CameraUpdateFactory.newLatLng(currentLocation));
     }
 
